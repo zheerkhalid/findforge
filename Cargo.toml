@@ -1,0 +1,84 @@
+[package]
+name = "findforge"
+version = "1.0.0"
+edition = "2021"
+description = "Instant file search for Windows: every file name on your drives, found as you type"
+authors = ["Zheer Khalid (https://zheer.dev)"]
+homepage = "https://zheer.dev"
+repository = "https://github.com/zheerkhalid/findforge"
+license = "MIT"
+
+[lib]
+name = "findforge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "FindForge"
+path = "src/main.rs"
+# All tests live in the library.
+test = false
+
+[dependencies]
+eframe = { version = "0.31.1", default-features = false, features = ["glow", "default_fonts"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "ico"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Native open/save dialogs (uses the system dialogs, no extra runtime).
+rfd = { version = "0.15", default-features = false }
+# Parallel scans and sorts over the index.
+rayon = "1.10"
+# Fast substring search.
+memchr = "2"
+# Optional regular-expression search mode.
+regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
+raw-window-handle = "0.6"
+
+[dependencies.windows]
+version = "0.58"
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Console",
+    "Win32_System_DataExchange",
+    "Win32_System_Environment",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Pipes",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_Controls",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[build-dependencies]
+tiny-skia = "0.11"
+embed-resource = "2.5"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
