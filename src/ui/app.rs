@@ -360,6 +360,11 @@ impl App {
             "rename" => self.pending_demo_select = Some(DemoSelect::Rename(2)),
             "delete" => self.pending_demo_select = Some(DemoSelect::Delete(vec![1, 2, 4])),
             "empty" => self.search = "quarterly zebra invoice".into(),
+            "rtl" => {
+                self.settings.preview = true;
+                self.search = "ڕاپۆرت | گۆرانی | تقرير | بەڵگە".into();
+                self.pending_demo_select = Some(DemoSelect::Rows(vec![1]));
+            }
             "select" => self.pending_demo_select = Some(DemoSelect::Rows(vec![1, 2, 3, 5])),
             _ => self.pending_demo_select = Some(DemoSelect::Rows(vec![2])),
         }

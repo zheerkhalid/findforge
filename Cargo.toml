@@ -1,6 +1,6 @@
 [package]
 name = "findforge"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 description = "Instant file search for Windows: every file name on your drives, found as you type"
 authors = ["Zheer Khalid (https://zheer.dev)"]

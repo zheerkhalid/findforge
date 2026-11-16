@@ -167,6 +167,8 @@ fn load_fonts(ctx: &egui::Context) {
     let regular = add("ui", "segoeui.ttf");
     let semibold = add("ui-semibold", "seguisb.ttf");
     let icons = add("ui-icons", "segmdl2.ttf") || add("ui-icons", "SegoeIcons.ttf");
+    // Joined Arabic-script letters (presentation forms) for right-to-left names.
+    let rtl = add("ui-rtl", "tahoma.ttf");
     ICON_FONT.store(icons, Ordering::Relaxed);
 
     let defaults = fonts
@@ -180,6 +182,9 @@ fn load_fonts(ctx: &egui::Context) {
     }
     if icons {
         body.push("ui-icons".to_string());
+    }
+    if rtl {
+        body.push("ui-rtl".to_string());
     }
     body.extend(defaults.iter().cloned());
     let mut strong = Vec::new();

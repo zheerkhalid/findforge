@@ -4,7 +4,7 @@
 
 use super::app::{App, Msg};
 use super::icons;
-use super::theme::{pal, regular, semibold, Icon};
+use super::theme::{pal, regular, Icon};
 use super::widgets;
 use crate::engine::Row;
 use crate::util;
@@ -332,7 +332,7 @@ impl App {
             }
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                ui.add(egui::Label::new(RichText::new(&row.name).font(semibold(15.5))).truncate());
+                super::bidi::label(ui, &row.name, 15.5, true, p.text);
                 ui.label(
                     RichText::new(self.type_name(&row.ext, row.is_dir))
                         .size(12.5)

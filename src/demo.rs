@@ -380,6 +380,11 @@ fn build_c(now: u32) -> VolumeBuilder {
     g.file(desktop, "Photo Studio.lnk", 1_420, 300);
     g.file(desktop, "Code Editor.lnk", 1_380, 250);
     g.file(desktop, "Report notes.txt", 2_048, 0);
+    // Right-to-left names, so the demo shows joined Kurdish and Arabic text.
+    let kurdish = g.dir(docs, "بەڵگەنامەکان");
+    g.file(kurdish, "ڕاپۆرتی ساڵانە report 2026.pdf", 845_000, 2);
+    g.file(kurdish, "گۆرانی کوردی.mp3", 5_300_000, 12);
+    g.file(desktop, "تقرير الاجتماع.docx", 64_000, 1);
     let appdata = g.dir_attrs(alex, "AppData", attr::HIDDEN);
     let local = g.dir(appdata, "Local");
     for app in APPS {

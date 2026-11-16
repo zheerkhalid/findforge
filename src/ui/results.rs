@@ -1329,6 +1329,16 @@ impl App {
                         None => icons::paint_glyph(ui, icon, &row.ext, row.is_dir),
                     }
                     let text_rect = Rect::from_min_max(pos2(c.x + 36.0, rect.top()), cell.max);
+                    // Right-to-left names are drawn by Windows so letters join
+                    // and runs are ordered (match highlighting is skipped there).
+                    if super::bidi::needs_native(&row.name)
+                        && super::bidi::paint(
+                            ui, text_rect, &row.name, 14.0, false, name_color, false,
+                        )
+                        .is_some()
+                    {
+                        continue;
+                    }
                     let ranges = query.map(|q| q.highlights(&row.name)).unwrap_or_default();
                     let job = name_job(&row.name, &ranges, name_color, p.accent, text_rect.width());
                     let galley = ui.fonts(|f| f.layout_job(job));

@@ -322,6 +322,11 @@ pub fn elided(
 
 /// Paints one elided line, vertically centred in `rect`. Returns whether it was cut.
 pub fn text_in(ui: &Ui, rect: Rect, text: &str, font: FontId, color: Color32) -> bool {
+    if super::bidi::needs_native(text) {
+        if let Some(cut) = super::bidi::paint(ui, rect, text, font.size, false, color, false) {
+            return cut;
+        }
+    }
     let galley = elided(ui, text, font, color, rect.width());
     let cut = galley.elided;
     ui.painter().galley(
@@ -334,6 +339,11 @@ pub fn text_in(ui: &Ui, rect: Rect, text: &str, font: FontId, color: Color32) ->
 
 /// Like [`text_in`], right-aligned.
 pub fn text_in_right(ui: &Ui, rect: Rect, text: &str, font: FontId, color: Color32) {
+    if super::bidi::needs_native(text)
+        && super::bidi::paint(ui, rect, text, font.size, false, color, true).is_some()
+    {
+        return;
+    }
     let galley = elided(ui, text, font, color, rect.width());
     ui.painter().galley(
         pos2(
@@ -402,6 +412,10 @@ pub fn field(ui: &mut Ui, label: &str, value: &str) {
     } else {
         p.text
     };
+    if super::bidi::needs_native(shown) {
+        super::bidi::label(ui, shown, 14.0, false, color);
+        return;
+    }
     ui.add(
         egui::Label::new(RichText::new(shown).color(color))
             .wrap()

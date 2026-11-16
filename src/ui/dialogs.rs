@@ -74,10 +74,7 @@ impl App {
                 ui.set_width(460.0);
                 ui.label(RichText::new("Rename").font(semibold(19.0)));
                 ui.add_space(2.0);
-                ui.add(
-                    egui::Label::new(RichText::new(&dialog.path).size(12.5).color(p.muted))
-                        .truncate(),
-                );
+                super::bidi::label(ui, &dialog.path, 12.5, false, p.muted);
                 ui.add_space(6.0);
                 let resp = text_field(ui, &mut dialog.text, "New name", false);
                 if dialog.focus {

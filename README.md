@@ -21,7 +21,7 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
   <img alt="Query language" src="https://img.shields.io/badge/query%20language-filters%20%2B%20regex-F26B1D?style=flat-square" />
   <img alt="Setup and portable" src="https://img.shields.io/badge/setup%20%2B%20portable-no%20runtimes-10C98F?style=flat-square" />
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-10C98F?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-109%20passing-10C98F?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-112%20passing-10C98F?style=flat-square" />
   <img alt="Made by Zheer Khalid" src="https://img.shields.io/badge/made%20by-Zheer%20Khalid-FF5A4E?style=flat-square" />
 </p>
 
@@ -53,6 +53,7 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
 - Name, path, size, dates and type; sortable columns and a column chooser
 - Ready-made filters: Audio, Video, Pictures, Documents, Compressed, Executables, Folders, and your own
 - Optional preview pane
+- Kurdish, Arabic, Persian and Hebrew names shown properly: letters joined, right to left
 
 </td>
 <td width="50%" valign="top">
@@ -128,6 +129,9 @@ Buttons next to the search box switch on match case, whole word, match path and 
 <td width="50%" align="center"><b>Settings</b><br><img src="docs/screenshots/settings.png" alt="Settings" /></td>
 <td width="50%" align="center"><b>Light theme</b><br><img src="docs/screenshots/light-theme.png" alt="Light theme" /></td>
 </tr>
+<tr>
+<td colspan="2" align="center"><b>Kurdish, Arabic and other right-to-left names, joined and in the right order</b><br><img src="docs/screenshots/kurdish-arabic.png" alt="Right-to-left names" width="640" /></td>
+</tr>
 </table>
 
 <sub>Screenshots use the built-in demo mode (<code>FindForge.exe --demo</code>), with an invented index.</sub>
@@ -159,6 +163,7 @@ Measured on a real system drive with **5.9 million** files and folders, without 
 Good to know:
 
 - FindForge searches **names and paths**, not the contents of files.
+- Right-to-left names are shown correctly in the results, paths and preview, but text you type into the search box itself is still shown unjoined (a limit of the text box). Matches inside right-to-left names are not highlighted.
 - Without administrator rights, folders your account cannot open are not indexed.
 - FAT, exFAT and network drives are rescanned on a timer rather than watched live.
 - A background service, so the fast method works without an administrator prompt, is not part of this version.
