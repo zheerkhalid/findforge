@@ -9,7 +9,7 @@ use crate::desktop::{self, Desktop, DesktopEvent};
 use crate::engine::{self, Engine, EngineStatus, Row, SearchRequest, SearchResults, VolState};
 use crate::index::Hit;
 use crate::query::{self, FilterDef, SearchOptions, SortKey};
-use crate::settings::{Bookmark, Settings, ThemeChoice};
+use crate::settings::{Bookmark, Settings, ThemeChoice, DEFAULT_WINDOW, MIN_WINDOW};
 use crate::shell::IconImage;
 use crate::{demo, sys};
 use eframe::egui::{
@@ -181,6 +181,10 @@ pub struct App {
     pub(super) pending_demo_select: Option<DemoSelect>,
     /// For background threads that need to wake the window.
     pub(super) pending_ctx: Option<egui::Context>,
+    /// Whether the index was still being built when the search was sent.
+    submitted_busy: bool,
+    /// The window as last seen: size when not maximized, and maximized or not.
+    window_seen: (Option<[f32; 2]>, bool),
 }
 
 fn window_handle(cc: &eframe::CreationContext<'_>) -> isize {
@@ -193,14 +197,20 @@ fn window_handle(cc: &eframe::CreationContext<'_>) -> isize {
 
 /// Starts the window.
 pub fn run(options: Options, icon: egui::IconData) -> eframe::Result<()> {
+    // The real program opens the way it was last closed.
+    let remembered = (!options.demo && options.screenshot.is_none())
+        .then(|| Settings::load(&sys::app_dir()))
+        .map(|s| (s.window_size, s.window_maximized));
+    let (size, maximized) = remembered.unwrap_or((None, false));
     let viewport = egui::ViewportBuilder::default()
         .with_title(if options.demo {
             "FindForge (demo)"
         } else {
             "FindForge"
         })
-        .with_inner_size([1280.0, 800.0])
-        .with_min_inner_size([900.0, 560.0])
+        .with_inner_size(size.unwrap_or(DEFAULT_WINDOW))
+        .with_min_inner_size(MIN_WINDOW)
+        .with_maximized(maximized)
         .with_icon(icon.clone());
     let native = eframe::NativeOptions {
         viewport,
@@ -328,6 +338,8 @@ impl App {
             }),
             pending_demo_select: None,
             pending_ctx: Some(ctx.clone()),
+            submitted_busy: false,
+            window_seen: (None, false),
         };
         app.apply_view(options.view.as_deref().unwrap_or("search"));
         app
@@ -443,12 +455,21 @@ impl App {
         let changed = self.submitted.as_ref() != Some(&want);
         let mut stale = epoch != self.submitted_epoch;
         if stale && !changed {
-            // The index keeps changing on a busy drive: do not search on
-            // every single change.
-            let wait = Duration::from_millis(1000).saturating_sub(self.last_submit.elapsed());
-            if !wait.is_zero() && self.results.is_some() {
-                ctx.request_repaint_after(wait);
-                stale = false;
+            if looks_inside_files(&want) {
+                // Reading files is slow: never restart such a search while it
+                // runs, and repeat it rarely (or once the index is complete).
+                let finished = self.results.as_ref().map(|r| r.id) == Some(self.next_id);
+                let index_ready = self.submitted_busy && !self.status.busy;
+                stale = finished
+                    && (index_ready || self.last_submit.elapsed() > Duration::from_secs(60));
+            } else {
+                // The index keeps changing on a busy drive: do not search on
+                // every single change.
+                let wait = Duration::from_millis(1000).saturating_sub(self.last_submit.elapsed());
+                if !wait.is_zero() && self.results.is_some() {
+                    ctx.request_repaint_after(wait);
+                    stale = false;
+                }
             }
         }
         if changed || stale {
@@ -465,6 +486,7 @@ impl App {
                 ascending: want.ascending,
             });
             self.submitted = Some(want);
+            self.submitted_busy = self.status.busy;
             self.submitted_epoch = epoch;
             self.last_submit = Instant::now();
         }
@@ -497,6 +519,46 @@ impl App {
         self.history_noted = text.clone();
         if self.settings.keep_history && self.settings.history.first() != Some(&text) {
             self.settings.push_history(&text);
+            self.save_settings();
+        }
+    }
+
+    /// True while a search that reads file contents is still running.
+    pub(super) fn reading_files(&self) -> bool {
+        self.submitted.as_ref().is_some_and(looks_inside_files)
+            && self.results.as_ref().map(|r| r.id) != Some(self.next_id)
+    }
+
+    /// Remembers the window size, to open the same way next time.
+    fn watch_window(&mut self, ctx: &egui::Context) {
+        let (rect, maximized, minimized) = ctx.input(|i| {
+            let v = i.viewport();
+            (
+                v.inner_rect,
+                v.maximized.unwrap_or(false),
+                v.minimized.unwrap_or(false),
+            )
+        });
+        let Some(rect) = rect else { return };
+        if minimized || rect.width() < MIN_WINDOW[0] - 1.0 || rect.height() < MIN_WINDOW[1] - 1.0 {
+            return;
+        }
+        self.window_seen.1 = maximized;
+        if !maximized {
+            self.window_seen.0 = Some([rect.width().round(), rect.height().round()]);
+        }
+    }
+
+    /// Writes the remembered window size to the settings when it changed.
+    fn save_window(&mut self) {
+        if self.demo || self.shot.is_some() {
+            return;
+        }
+        let (size, maximized) = self.window_seen;
+        let size = size.or(self.settings.window_size);
+        if size != self.settings.window_size || maximized != self.settings.window_maximized {
+            self.settings.window_size = size;
+            self.settings.window_maximized = maximized;
             self.save_settings();
         }
     }
@@ -603,6 +665,7 @@ impl App {
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             desktop::hide_window(self.hwnd);
+            self.save_window();
         }
         if self.hide_countdown > 1 {
             self.hide_countdown -= 1;
@@ -769,13 +832,19 @@ impl App {
                         Some(f) => format!("Search in {f}"),
                         None => "Search every file and folder".to_string(),
                     };
-                    let edit = egui::TextEdit::singleline(&mut self.search)
-                        .id(egui::Id::new("search-box"))
-                        .hint_text(RichText::new(hint).color(p.faint))
-                        .frame(false)
-                        .desired_width(ui.available_width() - 88.0)
-                        .font(regular(16.0));
-                    let mut output = ui.add_enabled_ui(enabled, |ui| edit.show(ui)).inner;
+                    let edit_width = ui.available_width() - 88.0;
+                    let search = &mut self.search;
+                    let mut output = ui
+                        .add_enabled_ui(enabled, |ui| {
+                            super::bidi::show_edit(ui, search, 16.0, p.text, |edit| {
+                                edit.id(egui::Id::new("search-box"))
+                                    .hint_text(RichText::new(hint).color(p.faint))
+                                    .frame(false)
+                                    .desired_width(edit_width)
+                                    .font(regular(16.0))
+                            })
+                        })
+                        .inner;
                     let resp = output.response.clone();
                     if self.focus_search && enabled {
                         resp.request_focus();
@@ -1206,7 +1275,12 @@ impl App {
                                 ui.horizontal(|ui| {
                                     let icon = if t.error { Icon::ERROR } else { Icon::DONE };
                                     ui.label(RichText::new(icon.glyph()).color(color));
-                                    ui.add(egui::Label::new(t.text.as_str()).wrap());
+                                    if super::bidi::needs_native(&t.text) {
+                                        // One joined line (a renamed Kurdish file…).
+                                        super::bidi::label(ui, &t.text, 14.0, false, p.text);
+                                    } else {
+                                        ui.add(egui::Label::new(t.text.as_str()).wrap());
+                                    }
                                 });
                             });
                     }
@@ -1266,6 +1340,12 @@ impl App {
         self.tab = Tab::Search;
         self.focus_search = true;
     }
+}
+
+/// Whether a search reads file contents (`content:`), which is slow.
+fn looks_inside_files(s: &Submitted) -> bool {
+    let has = |t: &str| t.to_ascii_lowercase().contains("content:");
+    has(&s.text) || s.filter.as_deref().is_some_and(has)
 }
 
 /// One line about the state of the index: `(text, colour, busy)`.
@@ -1387,6 +1467,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.status = self.engine.status();
         self.drain_messages(ctx);
+        self.watch_window(ctx);
         self.handle_close(ctx);
         self.handle_screenshot(ctx);
         self.drive_search(ctx);
@@ -1446,6 +1527,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.save_window();
         self.desktop = None;
         self.engine.shutdown();
     }

@@ -195,6 +195,8 @@ pub struct SearchResults {
     pub total_bytes: u64,
     /// The parsed query (for highlighting); `None` on a parse error.
     pub query: Option<Arc<query::Query>>,
+    /// How many files were read, when the query looks inside files (`content:`).
+    pub content: Option<query::ContentStats>,
 }
 
 /// Display data of one result.
@@ -264,6 +266,9 @@ struct Shared {
     status: Mutex<EngineStatus>,
     epoch: AtomicU64,
     wake: Box<dyn Fn() + Send + Sync>,
+    /// Whether `content:` searches may read files. Off for an engine over a
+    /// fixed index (the demo), whose files are invented.
+    read_files: AtomicBool,
 }
 
 /// Handle to the running engine.
@@ -282,12 +287,24 @@ fn now() -> Now {
     }
 }
 
-fn run_search(index: &Index, req: &SearchRequest, cancel: &AtomicBool) -> Option<SearchResults> {
+/// The first part of a search: everything the index can answer by itself.
+enum Begun {
+    /// Finished (`None` when it was cancelled).
+    Done(Option<SearchResults>),
+    /// Files have to be read (`content:`) before the search can finish.
+    Read {
+        query: query::Query,
+        job: query::ContentJob,
+        started: Instant,
+    },
+}
+
+fn begin_search(index: &Index, req: &SearchRequest, cancel: &AtomicBool) -> Begun {
     let started = Instant::now();
     let query = match query::parse(&req.text, req.filter.as_deref(), &req.options, now()) {
         Ok(q) => q,
         Err(e) => {
-            return Some(SearchResults {
+            return Begun::Done(Some(SearchResults {
                 id: req.id,
                 hits: Arc::new(Vec::new()),
                 epoch: index.epoch,
@@ -295,13 +312,37 @@ fn run_search(index: &Index, req: &SearchRequest, cancel: &AtomicBool) -> Option
                 error: Some(e),
                 total_bytes: 0,
                 query: None,
-            })
+                content: None,
+            }))
         }
     };
-    let mut hits = query::search(index, &query, cancel);
+    let hits = query::search(index, &query, cancel);
     if cancel.load(Ordering::Relaxed) {
-        return None;
+        return Begun::Done(None);
     }
+    if query.has_content() {
+        let job = query::content_job(index, &query, hits);
+        return Begun::Read {
+            query,
+            job,
+            started,
+        };
+    }
+    Begun::Done(finish_search(
+        index, req, query, hits, None, started, cancel,
+    ))
+}
+
+/// The last part of a search: totals and sorting.
+fn finish_search(
+    index: &Index,
+    req: &SearchRequest,
+    query: query::Query,
+    mut hits: Vec<Hit>,
+    content: Option<query::ContentStats>,
+    started: Instant,
+    cancel: &AtomicBool,
+) -> Option<SearchResults> {
     let total_bytes = {
         use rayon::prelude::*;
         hits.par_iter()
@@ -320,7 +361,25 @@ fn run_search(index: &Index, req: &SearchRequest, cancel: &AtomicBool) -> Option
         error: None,
         total_bytes,
         query: Some(Arc::new(query)),
+        content,
     })
+}
+
+fn run_search(index: &Index, req: &SearchRequest, cancel: &AtomicBool) -> Option<SearchResults> {
+    match begin_search(index, req, cancel) {
+        Begun::Done(results) => results,
+        Begun::Read {
+            query,
+            job,
+            started,
+        } => {
+            let (hits, stats) = job.run(cancel);
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
+            finish_search(index, req, query, hits, Some(stats), started, cancel)
+        }
+    }
 }
 
 /// Runs one search right now on the calling thread (command line, tests).
@@ -344,9 +403,31 @@ fn search_thread(index: Arc<RwLock<Index>>, slot: Arc<SearchSlot>, shared: Arc<S
                 st = slot.wake.wait(st).unwrap();
             }
         };
-        let results = {
+        let begun = {
             let idx = index.read().unwrap();
-            run_search(&idx, &req, &slot.cancel)
+            begin_search(&idx, &req, &slot.cancel)
+        };
+        let results = match begun {
+            Begun::Done(results) => results,
+            Begun::Read {
+                query,
+                job,
+                started,
+            } => {
+                // Reading files can take long: the index is not held meanwhile,
+                // so it keeps following the drives and the window stays quick.
+                let (hits, stats) = if shared.read_files.load(Ordering::SeqCst) {
+                    job.run(&slot.cancel)
+                } else {
+                    job.skip()
+                };
+                if slot.cancel.load(Ordering::Relaxed) {
+                    None
+                } else {
+                    let idx = index.read().unwrap();
+                    finish_search(&idx, &req, query, hits, Some(stats), started, &slot.cancel)
+                }
+            }
         };
         if let Some(results) = results {
             let mut st = slot.state.lock().unwrap();
@@ -365,6 +446,7 @@ impl Engine {
     /// background threads) whenever there is something new to show.
     pub fn start(config: EngineConfig, wake: Box<dyn Fn() + Send + Sync>) -> Engine {
         let engine = Engine::with_index(Index::default(), wake);
+        engine.shared.read_files.store(true, Ordering::SeqCst);
         let (tx, rx) = channel();
         let manager = Manager {
             index: engine.index.clone(),
@@ -391,6 +473,7 @@ impl Engine {
             status: Mutex::new(EngineStatus::default()),
             epoch: AtomicU64::new(index.epoch),
             wake,
+            read_files: AtomicBool::new(false),
         });
         let index = Arc::new(RwLock::new(index));
         let search = Arc::new(SearchSlot {

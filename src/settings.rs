@@ -85,7 +85,17 @@ pub struct Settings {
     pub close_to_tray: bool,
     /// Ask for administrator rights at every start (fast MFT indexing).
     pub always_admin: bool,
+
+    // ---- Window ---------------------------------------------------------------------------
+    /// Size of the window when it was last closed (in points), so it opens
+    /// the same way next time.
+    pub window_size: Option<[f32; 2]>,
+    pub window_maximized: bool,
 }
+
+/// The smallest and the default window size, in points.
+pub const MIN_WINDOW: [f32; 2] = [900.0, 560.0];
+pub const DEFAULT_WINDOW: [f32; 2] = [1280.0, 800.0];
 
 pub fn default_columns() -> Vec<ColumnSetting> {
     [
@@ -137,6 +147,8 @@ impl Default for Settings {
             tray_icon: false,
             close_to_tray: false,
             always_admin: false,
+            window_size: None,
+            window_maximized: false,
         }
     }
 }
@@ -184,6 +196,16 @@ impl Settings {
             }
         }
         self.rescan_minutes = self.rescan_minutes.clamp(1, 24 * 60);
+        // A size that makes no sense (hand-edited file, odd display) is forgotten.
+        self.window_size = self
+            .window_size
+            .filter(|s| s.iter().all(|v| v.is_finite()))
+            .map(|[w, h]| {
+                [
+                    w.clamp(MIN_WINDOW[0], 10_000.0),
+                    h.clamp(MIN_WINDOW[1], 10_000.0),
+                ]
+            });
         self.history.truncate(HISTORY_LIMIT);
     }
 
@@ -237,6 +259,15 @@ mod tests {
         assert!(loaded.columns.iter().all(|c| c.id != "bogus"));
         std::fs::write(dir.join("settings.json"), "\u{feff}{\"theme\":\"Light\"}").unwrap();
         assert_eq!(Settings::load(&dir).theme, ThemeChoice::Light);
+        // The window size is kept within sane limits.
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"window_size":[200.0,99999.0],"window_maximized":true}"#,
+        )
+        .unwrap();
+        let loaded = Settings::load(&dir);
+        assert_eq!(loaded.window_size, Some([MIN_WINDOW[0], 10_000.0]));
+        assert!(loaded.window_maximized);
         std::fs::write(dir.join("settings.json"), "{{{").unwrap();
         assert_eq!(Settings::load(&dir), Settings::default());
         std::fs::remove_dir_all(&dir).unwrap();

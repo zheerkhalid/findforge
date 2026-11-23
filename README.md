@@ -21,7 +21,7 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
   <img alt="Query language" src="https://img.shields.io/badge/query%20language-filters%20%2B%20regex-F26B1D?style=flat-square" />
   <img alt="Setup and portable" src="https://img.shields.io/badge/setup%20%2B%20portable-no%20runtimes-10C98F?style=flat-square" />
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-10C98F?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-112%20passing-10C98F?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-121%20passing-10C98F?style=flat-square" />
   <img alt="Made by Zheer Khalid" src="https://img.shields.io/badge/made%20by-Zheer%20Khalid-FF5A4E?style=flat-square" />
 </p>
 
@@ -30,6 +30,7 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
 [**Screenshots**](#%EF%B8%8F-screenshots) ·
 [**Download**](#-download) ·
 [**Speed**](#-speed) ·
+[**Changelog**](CHANGELOG.md) ·
 [**Developer**](#-developer)
 
 <img src="docs/screenshots/search.png" alt="FindForge search" width="900" />
@@ -39,7 +40,7 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
 ---
 
 > [!NOTE]
-> **First release.** FindForge has two ways to build its index. The standard way (a parallel walk of your folders, with live updates) has been run on a real drive with 5.9 million files. The fastest way (reading the NTFS file table and change journal as administrator) is included but has so far been tested only against synthetic data, not on a real drive.
+> FindForge has two ways to build its index. The standard way (a parallel walk of your folders, with live updates) has been run on a real drive with 5.9 million files. The fastest way (reading the NTFS file table and change journal as administrator) is included but has so far been tested only against synthetic data, not on a real drive.
 
 ## ✨ Features
 
@@ -49,11 +50,12 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
 
 ### ⚡ Search as you type
 - Results appear while you type
-- Matches highlighted in every name
+- Matches highlighted in every name, in any script
 - Name, path, size, dates and type; sortable columns and a column chooser
 - Ready-made filters: Audio, Video, Pictures, Documents, Compressed, Executables, Folders, and your own
 - Optional preview pane
-- Kurdish, Arabic, Persian and Hebrew names shown properly: letters joined, right to left
+- Look inside plain-text files when you ask for it: `content:invoice`
+- Kurdish, Arabic, Persian and Hebrew shown properly, in the results and while you type: letters joined, right to left
 
 </td>
 <td width="50%" valign="top">
@@ -71,7 +73,8 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
 <td valign="top">
 
 ### 🧰 Act on results
-- Open, open containing folder, copy name or path
+- Open, open with, open containing folder, copy name or path
+- Drag results into other programs; right-click for the Explorer menu
 - Rename and delete (to the Recycle Bin)
 - Multi-select, keyboard-first
 - Export results to CSV or text
@@ -85,7 +88,7 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
 - Tray icon; closing hides to the tray
 - Optional start with Windows
 - Command line: `FindForge.exe -s "query"` prints results
-- Dark and light themes
+- Dark and light themes; the window opens the size you left it
 
 </td>
 </tr>
@@ -106,6 +109,7 @@ FindForge indexes the names of every file and folder on your drives, keeps the i
 | `type:folder` | Folders or files only |
 | `parent:Downloads`, `drive:D` | By location |
 | `dupe:` | Names that appear more than once |
+| `content:invoice ext:txt;csv` | Text files that contain "invoice" (reads the files, so narrow the search first) |
 | `empty:` | Empty files and folders |
 
 Buttons next to the search box switch on match case, whole word, match path and regular expressions. The **?** button shows the full list.
@@ -138,7 +142,7 @@ Buttons next to the search box switch on match case, whole word, match path and 
 
 ## 📥 Download
 
-Get it from the [**latest release**](https://github.com/zheerkhalid/findforge/releases/latest):
+Get it from the [**latest release**](https://github.com/zheerkhalid/findforge/releases/latest). What changed in each version is in the [**changelog**](CHANGELOG.md).
 
 | File | What it is |
 |---|---|
@@ -162,8 +166,9 @@ Measured on a real system drive with **5.9 million** files and folders, without 
 
 Good to know:
 
-- FindForge searches **names and paths**, not the contents of files.
-- Right-to-left names are shown correctly in the results, paths and preview, but text you type into the search box itself is still shown unjoined (a limit of the text box). Matches inside right-to-left names are not highlighted.
+- FindForge searches **names and paths**. File contents are read only when a search says `content:…`, and then only plain-text files of up to 32 MB among the files the rest of the search matched (at most 100,000 of them). Word, PDF and other binary formats are not read.
+- Right-to-left text is drawn by Windows itself, so letters join and mixed names are ordered as in File Explorer. In text boxes the caret does not blink while such text is shown, and a double-click selects everything rather than one word.
+- The fastest indexing method (administrator rights) is still tested only against synthetic data, not on a real drive.
 - Without administrator rights, folders your account cannot open are not indexed.
 - FAT, exFAT and network drives are rescanned on a timer rather than watched live.
 - A background service, so the fast method works without an administrator prompt, is not part of this version.
@@ -178,6 +183,8 @@ cd findforge
 cargo build --release
 # -> target\release\FindForge.exe
 cargo test
+# installer + portable zip + EXE in .\dist (honours CARGO_TARGET_DIR):
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 ```
 
 | Command | What it does |

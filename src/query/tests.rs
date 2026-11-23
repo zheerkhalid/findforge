@@ -524,6 +524,51 @@ fn unknown_prefixes_are_plain_text() {
 }
 
 #[test]
+fn content_terms() {
+    let o = SearchOptions::default();
+    let q = parse("report", None, &o, NOW).unwrap();
+    assert!(!q.has_content() && q.content_terms().is_empty());
+    let q = parse("content:Invoice ext:txt", None, &o, NOW).unwrap();
+    assert!(q.has_content());
+    assert_eq!(q.content_terms(), ["invoice"]);
+    // Quoted phrases, case, groups and filters.
+    let q = parse("content:\"Total Due\" case:content:VAT", None, &o, NOW).unwrap();
+    assert_eq!(q.content_terms(), ["total due", "VAT"]);
+    let cs = SearchOptions {
+        match_case: true,
+        ..o
+    };
+    let q = parse("CONTENT:Invoice", None, &cs, NOW).unwrap();
+    assert_eq!(q.content_terms(), ["Invoice"]);
+    assert!(parse("<report content:x> ext:txt", None, &o, NOW).is_ok());
+    let q = parse("report", Some("content:x"), &o, NOW).unwrap();
+    assert!(q.has_content());
+    // A quoted "content:x" is plain text, as is regex mode.
+    assert!(!parse("\"content:x\"", None, &o, NOW).unwrap().has_content());
+    let re = SearchOptions { regex: true, ..o };
+    assert!(!parse("content:x", None, &re, NOW).unwrap().has_content());
+    // Errors.
+    assert!(err("content:").contains("content: expects text"));
+    for bad in [
+        "report | content:x",
+        "!content:x",
+        "<a|content:x>",
+        "!<a content:x>",
+    ] {
+        assert!(err(bad).contains("cannot be used with | or !"), "{bad}");
+    }
+    // In the name scan the term only keeps files that can be read: not
+    // folders, not empty files, nothing over 32 MB.
+    let got = names("content:x");
+    assert!(got.contains(&"report.txt".to_string()));
+    assert!(!got.contains(&"notes.txt".to_string()), "empty file");
+    assert!(!got.contains(&"Docs".to_string()), "folder");
+    assert!(!got.contains(&"pagefile.sys".to_string()), "too large");
+    assert!(!got.contains(&"archive.tar.gz".to_string()), "too large");
+    assert_eq!(names("content:x song ext:mp3").len(), 3);
+}
+
+#[test]
 fn highlights() {
     let o = SearchOptions::default();
     let q = parse("annual resume|2026 !draft ext:pdf", None, &o, NOW).unwrap();

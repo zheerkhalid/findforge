@@ -289,6 +289,78 @@ impl Preview {
     }
 }
 
+/// Most matches marked in one preview (a file full of them stays quick).
+const MARK_LIMIT: usize = 400;
+
+/// The preview text with every occurrence of `terms` in the `mark` colour
+/// (letter case is ignored).
+fn marked_text(
+    text: &str,
+    terms: &[String],
+    font: FontId,
+    color: Color32,
+    mark: Color32,
+) -> egui::text::LayoutJob {
+    use egui::text::{LayoutJob, TextFormat};
+    let plain = TextFormat {
+        font_id: font.clone(),
+        color,
+        ..Default::default()
+    };
+    let hot = TextFormat {
+        font_id: font,
+        color: mark,
+        underline: Stroke::new(1.0_f32, mark),
+        ..Default::default()
+    };
+    // Lower-casing can change byte lengths, so match per character.
+    let hay: Vec<(usize, char)> = text
+        .char_indices()
+        .map(|(i, c)| (i, c.to_lowercase().next().unwrap_or(c)))
+        .collect();
+    let needles: Vec<Vec<char>> = terms
+        .iter()
+        .map(|t| {
+            t.chars()
+                .map(|c| c.to_lowercase().next().unwrap_or(c))
+                .collect::<Vec<char>>()
+        })
+        .filter(|n| !n.is_empty())
+        .collect();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < hay.len() && !needles.is_empty() && ranges.len() < MARK_LIMIT {
+        let found = needles.iter().find(|n| {
+            hay.len() - i >= n.len()
+                && hay[i..i + n.len()]
+                    .iter()
+                    .map(|h| h.1)
+                    .eq(n.iter().copied())
+        });
+        match found {
+            Some(n) => {
+                let end = hay.get(i + n.len()).map(|h| h.0).unwrap_or(text.len());
+                ranges.push((hay[i].0, end));
+                i += n.len();
+            }
+            None => i += 1,
+        }
+    }
+    let mut job = LayoutJob::default();
+    let mut at = 0;
+    for (a, b) in ranges {
+        if a > at {
+            job.append(&text[at..a], 0.0, plain.clone());
+        }
+        job.append(&text[a..b], 0.0, hot.clone());
+        at = b;
+    }
+    if at < text.len() {
+        job.append(&text[at..], 0.0, plain);
+    }
+    job
+}
+
 impl App {
     /// The focused result, if any.
     pub(super) fn focused_row(&mut self) -> Option<Row> {
@@ -312,6 +384,12 @@ impl App {
         };
         let ctx = ui.ctx().clone();
         self.preview.show(&row, self.demo, &self.tx, &ctx);
+        let content_terms = self
+            .results
+            .as_ref()
+            .and_then(|r| r.query.as_ref())
+            .map(|q| q.content_terms())
+            .unwrap_or_default();
         let path = row.full_path();
 
         ui.horizontal(|ui| {
@@ -383,14 +461,15 @@ impl App {
                         .max_height(270.0)
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(text.as_str())
-                                        .font(FontId::new(12.5, FontFamily::Monospace))
-                                        .color(p.text),
-                                )
-                                .wrap(),
+                            // Text that `content:` looked for is marked.
+                            let job = marked_text(
+                                text,
+                                &content_terms,
+                                FontId::new(12.5, FontFamily::Monospace),
+                                p.text,
+                                p.accent,
                             );
+                            ui.add(egui::Label::new(job).wrap());
                         });
                 });
             if *truncated {
@@ -474,6 +553,32 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn searched_text_is_marked_in_the_preview() {
+        let font = FontId::new(12.5, FontFamily::Monospace);
+        let text = "Total due: 40\nTOTAL paid: 10\nڕاپۆرتی ساڵانە";
+        let job = marked_text(
+            text,
+            &["total".to_string(), "ساڵانە".to_string()],
+            font.clone(),
+            Color32::WHITE,
+            Color32::RED,
+        );
+        assert_eq!(job.text, text);
+        let marked: Vec<&str> = job
+            .sections
+            .iter()
+            .filter(|s| s.format.color == Color32::RED)
+            .map(|s| &text[s.byte_range.clone()])
+            .collect();
+        assert_eq!(marked, ["Total", "TOTAL", "ساڵانە"]);
+        // Nothing to mark: one plain section.
+        let job = marked_text(text, &[], font.clone(), Color32::WHITE, Color32::RED);
+        assert_eq!(job.sections.len(), 1);
+        let job = marked_text("", &["x".to_string()], font, Color32::WHITE, Color32::RED);
+        assert!(job.sections.is_empty());
+    }
 
     #[test]
     fn previewable_kinds() {

@@ -153,6 +153,19 @@ fn run_in(base: &Path, log: &mut Vec<String>) -> Result<(), String> {
 
     // Searches.
     check(log, "\"report\"", count(&engine, "report")?, 4)?;
+    // Looking inside files (every test file is filled with the letter x).
+    check(
+        log,
+        "content:xxx ext:txt (inside files)",
+        count(&engine, "content:xxx ext:txt")?,
+        1,
+    )?;
+    check(
+        log,
+        "content:zebra (inside files)",
+        count(&engine, "content:zebra")?,
+        0,
+    )?;
     check(
         log,
         "\"annual report\" phrase",

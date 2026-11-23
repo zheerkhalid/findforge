@@ -13,6 +13,7 @@ const USAGE: &str = "FindForge
         -n, --limit <count>          print at most this many results
         --sort name|path|size|modified|created|type   [--desc]
         --case  --whole-word  --path  --regex         matching options
+        (the query may use content:text to look inside plain-text files)
         --csv                        print Name,Path,Size,Date Modified,Date Created,Type
         --count                      print only the number of results
         --refresh                    rescan the drives before searching

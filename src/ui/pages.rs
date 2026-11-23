@@ -53,13 +53,13 @@ fn small_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> egui::
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(10, 5))
         .show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::singleline(text)
-                    .hint_text(RichText::new(hint).color(p.faint))
+            super::bidi::show_edit(ui, text, 14.0, p.text, |edit| {
+                edit.hint_text(RichText::new(hint).color(p.faint))
                     .frame(false)
                     .desired_width(width)
-                    .font(regular(14.0)),
-            )
+                    .font(regular(14.0))
+            })
+            .response
         })
         .inner
 }

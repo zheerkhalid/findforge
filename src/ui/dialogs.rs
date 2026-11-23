@@ -38,17 +38,19 @@ fn text_field(ui: &mut Ui, text: &mut String, hint: &str, mono: bool) -> egui::R
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(10, 6))
         .show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::singleline(text)
-                    .hint_text(RichText::new(hint).color(p.faint))
+            let width = ui.available_width();
+            let (size, font) = if mono {
+                (14.0, FontId::new(14.0, FontFamily::Monospace))
+            } else {
+                (15.0, regular(15.0))
+            };
+            super::bidi::show_edit(ui, text, size, p.text, |edit| {
+                edit.hint_text(RichText::new(hint).color(p.faint))
                     .frame(false)
-                    .desired_width(ui.available_width())
-                    .font(if mono {
-                        FontId::new(14.0, FontFamily::Monospace)
-                    } else {
-                        regular(15.0)
-                    }),
-            )
+                    .desired_width(width)
+                    .font(font)
+            })
+            .response
         })
         .inner
 }

@@ -143,6 +143,36 @@ fn name_job(
     job
 }
 
+/// How long a search took, for the status bar.
+fn fmt_took(ms: f64) -> String {
+    if ms < 10.0 {
+        format!("{ms:.1} ms")
+    } else if ms < 1000.0 {
+        format!("{ms:.0} ms")
+    } else {
+        format!("{:.1} s", ms / 1000.0)
+    }
+}
+
+/// One line about a search that looked inside files.
+fn content_note(c: &crate::query::ContentStats) -> String {
+    let files = |n: usize| {
+        format!(
+            "{} {}",
+            util::fmt_count(n as u64),
+            if n == 1 { "file" } else { "files" }
+        )
+    };
+    let mut note = format!("looked inside {}", files(c.searched));
+    if c.skipped > 0 {
+        note.push_str(&format!(", skipped {}", files(c.skipped)));
+    }
+    if c.limited {
+        note.push_str(" (too many candidates: narrow the search)");
+    }
+    note
+}
+
 enum RowEvent {
     Click {
         index: usize,
@@ -305,6 +335,19 @@ impl App {
                 self.toast(e, true);
                 break;
             }
+        }
+    }
+
+    /// Lets the user pick the program to open the focused result with.
+    fn open_with_selected(&mut self) {
+        let paths = self.action_paths();
+        let Some(first) = paths.first() else { return };
+        self.note_history();
+        if self.demo_blocked() {
+            return;
+        }
+        if let Err(e) = shell::open_with(first) {
+            self.toast(e, true);
         }
     }
 
@@ -836,6 +879,7 @@ impl App {
                     }
                 };
                 item(ui, 1, Icon::OPEN, "Open", "Enter");
+                item(ui, 9, Icon::APP, "Open with…", "");
                 item(
                     ui,
                     2,
@@ -862,6 +906,7 @@ impl App {
             Some(6) => self.start_rename(),
             Some(7) => self.start_delete(),
             Some(8) => self.show_properties(),
+            Some(9) => self.open_with_selected(),
             _ => {}
         }
     }
@@ -982,16 +1027,18 @@ impl App {
                     } else if n > 0 {
                         ui.label(small(util::fmt_size(r.total_bytes), p.muted));
                     }
+                    if let Some(c) = &r.content {
+                        ui.label(small(content_note(c), p.muted)).on_hover_text(
+                            "content: reads plain-text files of up to 32 MB. Other files are skipped.",
+                        );
+                    }
                     let took = r.took.as_secs_f64() * 1000.0;
                     let took = if self.taking_screenshot() { 4.0 } else { took };
-                    ui.label(small(
-                        if took < 10.0 {
-                            format!("{took:.1} ms")
-                        } else {
-                            format!("{took:.0} ms")
-                        },
-                        p.faint,
-                    ));
+                    ui.label(small(fmt_took(took), p.faint));
+                    if self.reading_files() {
+                        ui.add(egui::Spinner::new().size(12.0).color(p.accent));
+                        ui.label(small("Looking inside files…".into(), p.muted));
+                    }
                 }
                 None => {
                     ui.label(small("Searching…".into(), p.muted));
@@ -1147,6 +1194,14 @@ impl App {
             Some(_) if total == 0 => {
                 let hint = if self.status.total_entries == 0 {
                     "Nothing is indexed yet. Choose what to index in Settings."
+                } else if self.reading_files() {
+                    "Still looking inside files…"
+                } else if self.results.as_ref().is_some_and(|r| r.content.is_some()) {
+                    if self.demo {
+                        "Demo: the invented files have no contents to look inside."
+                    } else {
+                        "No file with that text inside. content: reads plain-text files of up to 32 MB; check the other words of the search too."
+                    }
                 } else if self.filter.is_some() {
                     "No match with this filter. Try the All filter, or fewer words."
                 } else {
@@ -1329,17 +1384,18 @@ impl App {
                         None => icons::paint_glyph(ui, icon, &row.ext, row.is_dir),
                     }
                     let text_rect = Rect::from_min_max(pos2(c.x + 36.0, rect.top()), cell.max);
+                    let ranges = query.map(|q| q.highlights(&row.name)).unwrap_or_default();
                     // Right-to-left names are drawn by Windows so letters join
-                    // and runs are ordered (match highlighting is skipped there).
+                    // and runs are ordered; it also says where the matched
+                    // letters ended up.
                     if super::bidi::needs_native(&row.name)
-                        && super::bidi::paint(
-                            ui, text_rect, &row.name, 14.0, false, name_color, false,
+                        && super::bidi::paint_marked(
+                            ui, text_rect, &row.name, 14.0, name_color, p.accent, &ranges,
                         )
                         .is_some()
                     {
                         continue;
                     }
-                    let ranges = query.map(|q| q.highlights(&row.name)).unwrap_or_default();
                     let job = name_job(&row.name, &ranges, name_color, p.accent, text_rect.width());
                     let galley = ui.fonts(|f| f.layout_job(job));
                     ui.painter().galley(
@@ -1494,6 +1550,28 @@ mod tests {
         assert_eq!(job.text, "résumé");
         let job = name_job("abc", &[], Color32::WHITE, Color32::RED, 300.0);
         assert_eq!(job.sections.len(), 1);
+    }
+
+    #[test]
+    fn status_bar_wording() {
+        assert_eq!(fmt_took(4.04), "4.0 ms");
+        assert_eq!(fmt_took(43.6), "44 ms");
+        assert_eq!(fmt_took(2340.0), "2.3 s");
+        let mut c = crate::query::ContentStats {
+            searched: 1,
+            skipped: 0,
+            limited: false,
+        };
+        assert_eq!(content_note(&c), "looked inside 1 file");
+        c.searched = 1200;
+        c.skipped = 3;
+        c.limited = true;
+        let note = content_note(&c);
+        assert!(
+            note.starts_with("looked inside 1,200 files, skipped 3 files"),
+            "{note}"
+        );
+        assert!(note.contains("narrow"));
     }
 
     #[test]

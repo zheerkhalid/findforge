@@ -1,7 +1,14 @@
 ; FindForge installer (Inno Setup 6).
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.1.0"
+#endif
+; package.ps1 passes these, so a build outside .\target (CARGO_TARGET_DIR) works too.
+#ifndef AppExe
+  #define AppExe "..\target\release\FindForge.exe"
+#endif
+#ifndef AppIcon
+  #define AppIcon "..\dist\findforge.ico"
 #endif
 
 [Setup]
@@ -21,7 +28,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible 
 OutputDir=..\dist
 OutputBaseFilename=FindForge-Setup
-SetupIconFile=..\target\findforge.ico
+SetupIconFile={#AppIcon}
 UninstallDisplayIcon={app}\FindForge.exe
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -37,7 +44,7 @@ VersionInfoDescription=FindForge Setup
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; 
 
 [Files]
-Source: "..\target\release\FindForge.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
 [Icons]

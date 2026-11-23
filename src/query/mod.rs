@@ -4,8 +4,11 @@
 //! runs that tree over every entry of the index on all processor cores, and
 //! `sort` orders the hits.
 
+mod content;
 mod parse;
 mod text;
+
+pub use content::{content_job, filter_by_content, ContentJob, ContentStats};
 
 use crate::index::{flags, Entry, Hit, Index, VolumeStore, EXT_OTHER, NONE};
 use parse::{Node, Parsed, Pred};
@@ -132,6 +135,21 @@ impl Query {
         matches!(&self.parsed.root, Node::And(v) if v.is_empty())
     }
 
+    /// True when the query looks inside files (`content:`).
+    pub fn has_content(&self) -> bool {
+        !self.parsed.contents.is_empty()
+    }
+
+    /// The texts looked for inside files, as typed (lower case unless the
+    /// term matches case).
+    pub fn content_terms(&self) -> Vec<String> {
+        self.parsed
+            .contents
+            .iter()
+            .map(|c| c.needle.clone())
+            .collect()
+    }
+
     /// Byte ranges of `name` to highlight as "this is why it matched":
     /// sorted, not overlapping, always on character boundaries.
     pub fn highlights(&self, name: &str) -> Vec<Range<usize>> {
@@ -237,6 +255,7 @@ impl Env<'_> {
                 t != 0 && t >= *min && t <= *max
             }
             Pred::Attrib(mask) => e.flags & mask == *mask,
+            Pred::Content => !e.is_dir() && e.size > 0 && e.size <= parse::CONTENT_MAX_BYTES,
             Pred::Root(r) => self.plan.root_lower.starts_with(r.as_str()),
             Pred::Parent(i) => self.plan.parent_slots[*i] == Some(e.parent),
             Pred::Len(min, max) => {
@@ -653,6 +672,14 @@ pub fn syntax_help() -> Vec<(&'static str, &'static str)> {
         ("drive:d", "Only this drive."),
         ("depth:<3", "By how many folders deep the item is."),
         ("len:>100", "By the length of the name in characters."),
+        (
+            "content:invoice",
+            "Look inside files for this text (slower: narrow it with other words, a filter or ext: first).",
+        ),
+        (
+            "content:\"total due\" ext:txt;csv",
+            "A phrase inside files of these types.",
+        ),
         ("dupe:", "Names that occur more than once."),
         ("empty:", "Folders with nothing in them."),
         (

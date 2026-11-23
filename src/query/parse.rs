@@ -34,7 +34,24 @@ pub(crate) enum Pred {
     Attrib(u16),
     /// The volume root starts with this (lower case, e.g. `d:`).
     Root(String),
+    /// A file small enough to be read for a `content:` term; the text itself
+    /// is looked for afterwards (see `content.rs`).
+    Content,
 }
+
+/// Text to look for inside files (`content:invoice`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ContentTerm {
+    /// Lower case unless `case_sensitive`.
+    pub needle: String,
+    pub case_sensitive: bool,
+}
+
+/// Larger files are never read for `content:`.
+pub(crate) const CONTENT_MAX_BYTES: u64 = 32 << 20;
+
+const CONTENT_NESTED: &str =
+    "content: cannot be used with | or !. Narrow the search with other words instead.";
 
 #[derive(Clone, Debug)]
 pub(crate) enum Node {
@@ -61,6 +78,7 @@ impl Node {
                 Pred::Len(..) | Pred::Empty => 2,
                 Pred::Dupe => 4,
                 Pred::Depth(..) => 6,
+                Pred::Content => 30,
                 Pred::Text(t) => match (&t.pattern, t.path) {
                     (_, true) => 20,
                     (Pattern::Regex(_), false) => 8,
@@ -100,6 +118,8 @@ pub(crate) struct Parsed {
     pub uses_empty: bool,
     /// Positive name terms, for highlighting.
     pub highlight: Vec<TextMatch>,
+    /// Texts that must all be inside a file (`content:`).
+    pub contents: Vec<ContentTerm>,
 }
 
 pub(crate) const AUDIO: &str = "aac;ac3;aif;aifc;aiff;amr;ape;au;cda;dts;fla;flac;m1a;m2a;m3u;m3u8;m4a;m4b;m4p;mid;midi;mka;mp2;mp3;mpa;mpc;oga;ogg;opus;ra;snd;wav;weba;wma;wv";
@@ -216,6 +236,7 @@ pub(crate) fn parse(
             uses_dupe: false,
             uses_empty: false,
             highlight: Vec::new(),
+            contents: Vec::new(),
         },
     };
     let mut parts = Vec::new();
@@ -243,9 +264,23 @@ pub(crate) fn parse(
         parts.push(node);
     }
     let mut root = flatten(Node::And(parts));
+    if !ctx.out.contents.is_empty() && !content_at_top(&root, true) {
+        return Err(CONTENT_NESTED.into());
+    }
     root.order();
     ctx.out.root = root;
     Ok(ctx.out)
+}
+
+/// True when every `content:` leaf is reached through AND nodes only.
+fn content_at_top(node: &Node, top: bool) -> bool {
+    match node {
+        Node::And(v) => v.iter().all(|n| content_at_top(n, top)),
+        Node::Or(v) => v.iter().all(|n| content_at_top(n, false)),
+        Node::Not(n) => content_at_top(n, false),
+        Node::Leaf(Pred::Content) => top,
+        Node::Leaf(_) => true,
+    }
 }
 
 fn flatten(node: Node) -> Node {
@@ -441,6 +476,24 @@ fn parse_term(ctx: &mut Ctx, token: &str, quoted: bool, highlight: bool) -> Resu
             break;
         }
         if !mods.regex {
+            if let Some(arg) = strip_prefix_ci(rest, "content:") {
+                if arg.is_empty() {
+                    return Err(
+                        "content: expects text to look for inside files, for example content:invoice."
+                            .into(),
+                    );
+                }
+                let case_sensitive = mods.case.unwrap_or(ctx.options.match_case);
+                ctx.out.contents.push(ContentTerm {
+                    needle: if case_sensitive {
+                        arg.to_string()
+                    } else {
+                        arg.to_lowercase()
+                    },
+                    case_sensitive,
+                });
+                return Ok(Node::Leaf(Pred::Content));
+            }
             if let Some(node) = parse_function(ctx, rest)? {
                 return Ok(with_kind(mods.only, node));
             }
